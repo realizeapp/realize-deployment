@@ -1,0 +1,4 @@
+git+git://github.com/ansible/ansible@1faa840b6776990e5072a7d088a2c11f848f9c87#egg=ansible
+argparse==1.2.1
+wsgiref==0.1.2
+boto==2.9.5

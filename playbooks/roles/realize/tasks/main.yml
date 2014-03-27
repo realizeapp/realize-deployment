@@ -1,0 +1,184 @@
+---
+- name: create user group
+  group: name=ar state=present
+
+- name: add ubuntu to ar
+  user: name=ubuntu append=yes groups="adm,ar"
+
+- name: Create www-data user
+  user: name={{realize_user}} append=yes groups="adm,ar" shell=/bin/bash
+
+- name:  Creating admin users
+  user: name={{ item.user }} append=yes groups={{ "adm,ar," + ",".join(item.groups) }} shell=/bin/bash
+  with_items: admin_users
+  when: admin_users is defined
+
+- name: Copying ssh keys for admin users
+  authorized_key: user={{item.user}} key="{{ lookup('file', item.path ) }}"
+  with_items: admin_keys
+  when: admin_keys is defined
+
+#Allows us to recover from a bad sudoers file
+- name:  Install policykit
+  apt: pkg=policykit-1 install_recommends=yes state=present update_cache=yes
+
+- name: upload sudoers.d file
+  copy: src=sudoers-admin dest=/tmp/admin-sudo owner=root group=root mode=0440
+
+- name: move file to sudoers.d
+  shell: visudo -q -c -f /tmp/admin-sudo && cp /tmp/admin-sudo /etc/sudoers.d/admin-sudo
+
+- name: install python and pip
+  apt: pkg={{item}} install_recommends=yes state=present update_cache=yes
+  with_items:
+  - python2.7
+  - python-pip
+  - python2.7-dev
+  - python-mysqldb
+  - postgresql
+  - libpq-dev
+  - python-psycopg2
+
+- name: pip install virtualenv
+  pip: name=virtualenv state=present
+
+- name: pip install virtualenvwrapper
+  pip: name=virtualenvwrapper state=present
+
+- name: create virtualenv directory
+  file: path={{ venv_dir }} owner=ubuntu group=adm mode=2775 state=directory
+
+- name: create the virtualenv directory files
+  command: /usr/local/bin/virtualenv {{ venv_dir }} --distribute creates={{venv_dir}}/bin/activate
+
+- name: gunicorn
+  pip: name=gunicorn virtualenv="{{venv_dir}}" state=present
+
+- name: create the postgresql root user
+  postgresql_user: name={{database_root_user}} password={{database_root_password}} role_attr_flags=SUPERUSER,CREATEDB
+  sudo_user: postgres
+
+- name: setup postgresql database
+  postgresql_db: name={{database_name}} state=present login_host={{database_host}} login_password={{database_root_password}} login_user={{database_root_user}}
+
+- name: setup postgresql user for app
+  postgresql_user: name={{database_user}} password={{database_password}} priv=ALL state=present login_host={{database_host}} login_password={{database_root_password}} login_user={{database_root_user}} db={{database_name}}
+
+- name: create www directory if needed
+  file: path={{app_base_dir}} state=directory
+
+#Create the templates for upstart services
+- name:  render celery service from template
+  template: src=celery.conf.j2 dest=/etc/init/celery.conf owner=root group=ar mode=0664
+  notify: restart celery
+
+#Create the templates for upstart services
+- name:  render realize service from template
+  template: src=realize.conf.j2 dest=/etc/init/realize.conf owner=root group=ar mode=0664
+  notify: restart realize
+
+#Upload config files for django (auth and env)
+- name:  create realize application config env.json file
+  template: src=env.json.j2 dest={{app_base_dir}}/env.json owner={{realize_user}} group=ar mode=0640
+  notify:
+    -  restart celery
+    -  restart realize
+
+- name:  create realize auth file auth.json
+  template: src=auth.json.j2 dest={{app_base_dir}}/auth.json owner={{realize_user}} group=ar mode=0640
+  notify:
+    -  restart celery
+    -  restart realize
+
+#Needed if using redis to prevent memory issues
+- name:  change memory commit settings -- needed for redis
+  command: sysctl vm.overcommit_memory=1
+
+- name:  set permissions on app_base_dir sgid for ar
+  file: path={{app_base_dir}} owner=root group=ar mode=2775 state=directory
+  file: path={{venv_dir}} owner=root group=ar mode=2775 state=directory
+
+- name:  Install git so that we can clone repos
+  apt: pkg=git install_recommends=yes state=present
+
+#Create directories for repos
+- name:  create realize directory and set permissions
+  file: path={{realize_dir}} owner={{realize_user}} group=ar mode=2775 state=directory
+
+- name: create frontend directory and set permissions
+  file: path={{realize_frontend_dir}} owner={{realize_user}} group=ar mode=2775 state=directory
+
+# Get realize repo or update
+- name:  git checkout realize repo into realize_dir
+  git: dest={{realize_dir}} repo={{realize_source_repo}} version={{realize_branch}} force=yes
+  notify:
+    -  restart celery
+    -  restart realize
+
+# Get frontend repo or update
+- name:  git checkout realize frontend repo into realize_dir
+  git: dest={{realize_frontend_dir}} repo={{realize_frontend_source_repo}} version={{realize_frontend_branch}} force=yes
+  notify:
+    -  restart celery
+    -  restart realize
+
+#Change cache permissions
+- name: create cache directory
+  file: path={{realize_dir}}/cache/ owner=realize group=ar mode=2775 state=directory recurse=yes
+
+#Change media permissions
+- name: create media directory
+  file: path={{realize_dir}}/media/ owner=realize group=ar mode=2775 state=directory recurse=yes
+
+#Install system packages
+- name:  install realize apt packages
+  command: xargs -a {{realize_dir}}/apt-packages.txt apt-get install -y
+
+- name : install python requirements for realize
+  pip: requirements="{{realize_dir}}/requirements.txt" virtualenv="{{venv_dir}}" state=present
+
+- name: configure npm
+  command: npm config set registry http://registry.npmjs.org/
+
+- name: update node
+  command: npm install -g n
+
+- name: switch to latest stable node
+  command: n stable
+
+- name: install npm packages
+  npm: name={{item}} global=yes
+  with_items:
+    - grunt-cli
+    - karma
+    - bower
+
+- name:  syncdb for realize
+  shell: "{{venv_dir}}/bin/python {{realize_dir}}/manage.py {{item}} chdir={{realize_dir}}"
+  with_items:
+    - syncdb
+  notify:
+    - restart realize
+    - restart celery
+
+- name: syncjs for realize
+  shell: "{{venv_dir}}/bin/python {{realize_dir}}/manage.py syncjs -p {{realize_frontend_dir}} --settings={{realize_settings}} chdir={{realize_dir}}"
+  notify:
+    - restart realize
+
+- name:  create nginx directory and set perms
+  file: path=/etc/nginx/sites-available owner=root group=ar mode=2775 state=directory
+
+#Install nginx sites available
+#remove default link, render template, link template to sites-enabled to activate
+- name:  Removing default nginx config
+  file: path=/etc/nginx/sites-enabled/default state=absent
+  notify:  restart nginx
+
+- name:  render nginx sites available
+  template: src=nginx-realize.j2 dest=/etc/nginx/sites-available/{{ site_name }}
+  notify:  restart nginx
+
+- name:  Creating nginx config link {{ site_name }}
+  file: src=/etc/nginx/sites-available/{{ site_name }} dest=/etc/nginx/sites-enabled/{{ site_name }} state=link owner=root group=root
+  notify:  restart nginx

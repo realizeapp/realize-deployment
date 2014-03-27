@@ -1,0 +1,7 @@
+!.vc
+secrets/*
+.idea/*
+secrets/files/*
+secrets/keys/*
+secrets/users/*
+secrets/vars/*

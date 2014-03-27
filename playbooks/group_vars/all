@@ -1,0 +1,4 @@
+---
+app_base_dir: /opt/wwc
+secure_dir: ../secrets/
+venv_dir: /opt/equirio

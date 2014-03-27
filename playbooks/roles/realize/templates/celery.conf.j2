@@ -1,0 +1,15 @@
+description "Realize Celery Tasks"
+author "Vik Paruchuri <vik@equirio.com>"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+respawn limit 3 30
+
+env FLASK_SETTINGS_MODULE={{realize_settings}}
+
+chdir {{realize_dir}}
+setuid {{realize_user}}
+
+exec {{venv_dir}}/bin/celery worker --loglevel=info -B --autoscale={{ ansible_processor_cores * 2 }},1 -A app.celery

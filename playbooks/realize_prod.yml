@@ -1,0 +1,9 @@
+# ansible-playbook -vvv --user=ubuntu  realize_prod.yml -i ./ec2.py  -c ssh
+- hosts:
+    - tag_Group_realize_prod
+  vars_files:
+    - "{{ secure_dir }}/vars/realize_prod_vars.yml"
+    - "{{ secure_dir }}/users/users.yml"
+  roles:
+    - realize
+  sudo: True

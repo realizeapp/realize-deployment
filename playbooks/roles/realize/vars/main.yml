@@ -1,0 +1,13 @@
+realize_source_repo: https://github.com/realizeapp/realize-core.git
+realize_frontend_source_repo: https://github.com/realizeapp/realize-ui-angular.git
+realize_dir: "{{app_base_dir}}/realize-core"
+realize_frontend_dir: "{{app_base_dir}}/realize-frontend"
+realize_settings: realize.deployment
+nltk_data_dir: /usr/share/nltk_data
+realize_branch: vik/dev
+realize_frontend_branch: vik/dev
+nginx_listen_port: 80
+nginx_secure_port: 443 ssl
+gunicorn_port: 7999
+realize_user: realize
+site_name: realize

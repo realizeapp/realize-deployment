@@ -5,3 +5,4 @@ secrets/files/*
 secrets/keys/*
 secrets/users/*
 secrets/vars/*
+secrets/certs/*

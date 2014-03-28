@@ -16,4 +16,4 @@ env FLASK_SETTINGS_MODULE={{realize_settings}}
 chdir {{realize_dir}}
 setuid {{realize_user}}
 
-exec {{venv_dir}}/bin/gunicorn --preload -b 127.0.0.1:$PORT -w $WORKERS --timeout=30 --pythonpath={{realize_dir}} app:app
+exec {{venv_dir}}/bin/gunicorn --preload -b 127.0.0.1:$PORT -w $WORKERS --timeout=30 --pythonpath={{realize_dir}} prod_server:app

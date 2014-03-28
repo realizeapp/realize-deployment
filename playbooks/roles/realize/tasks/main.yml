@@ -54,15 +54,12 @@
 - name: gunicorn
   pip: name=gunicorn virtualenv="{{venv_dir}}" state=present
 
-- name: create the postgresql root user
-  postgresql_user: name={{database_root_user}} password={{database_root_password}} role_attr_flags=SUPERUSER,CREATEDB
+- name: setup postgresql user for app
+  postgresql_user: name={{database_user}} password={{database_password}} state=present role_attr_flags=CREATEDB
   sudo_user: postgres
 
 - name: setup postgresql database
-  postgresql_db: name={{database_name}} state=present login_host={{database_host}} login_password={{database_root_password}} login_user={{database_root_user}}
-
-- name: setup postgresql user for app
-  postgresql_user: name={{database_user}} password={{database_password}} priv=ALL state=present login_host={{database_host}} login_password={{database_root_password}} login_user={{database_root_user}} db={{database_name}}
+  postgresql_db: name={{database_name}} state=present login_host={{database_host}} login_password={{database_password}} login_user={{database_user}}
 
 - name: create www directory if needed
   file: path={{app_base_dir}} state=directory

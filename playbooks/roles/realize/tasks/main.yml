@@ -67,25 +67,17 @@
 #Create the templates for upstart services
 - name:  render celery service from template
   template: src=celery.conf.j2 dest=/etc/init/celery.conf owner=root group=ar mode=0664
-  notify: restart celery
 
 #Create the templates for upstart services
 - name:  render realize service from template
   template: src=realize.conf.j2 dest=/etc/init/realize.conf owner=root group=ar mode=0664
-  notify: restart realize
 
 #Upload config files for django (auth and env)
 - name:  create realize application config env.json file
   template: src=env.json.j2 dest={{app_base_dir}}/env.json owner={{realize_user}} group=ar mode=0640
-  notify:
-    -  restart celery
-    -  restart realize
 
 - name:  create realize auth file auth.json
   template: src=auth.json.j2 dest={{app_base_dir}}/auth.json owner={{realize_user}} group=ar mode=0640
-  notify:
-    -  restart celery
-    -  restart realize
 
 #Needed if using redis to prevent memory issues
 - name:  change memory commit settings -- needed for redis
@@ -108,16 +100,10 @@
 # Get realize repo or update
 - name:  git checkout realize repo into realize_dir
   git: dest={{realize_dir}} repo={{realize_source_repo}} version={{realize_branch}} force=yes
-  notify:
-    -  restart celery
-    -  restart realize
 
 # Get frontend repo or update
 - name:  git checkout realize frontend repo into realize_dir
   git: dest={{realize_frontend_dir}} repo={{realize_frontend_source_repo}} version={{realize_frontend_branch}} force=yes
-  notify:
-    -  restart celery
-    -  restart realize
 
 #Change cache permissions
 - name: create cache directory
@@ -154,14 +140,26 @@
   shell: "{{venv_dir}}/bin/python {{realize_dir}}/manage.py {{item}} chdir={{realize_dir}}"
   with_items:
     - syncdb
-  notify:
-    - restart realize
-    - restart celery
+
+# Stop services to free up memory for syncjs
+- name: stop celery
+  service: name=celery state=stopped
+
+- name: stop realize
+  service: name=realize state=stopped
+
+- name: Remove old frontend files
+  shell: "sudo rm -rf {{realize_dir}}/static/frontend/* chdir={{realize_dir}}"
 
 - name: syncjs for realize
-  shell: "{{venv_dir}}/bin/python {{realize_dir}}/manage.py syncjs -p {{realize_frontend_dir}} --settings={{realize_settings}} chdir={{realize_dir}}"
-  notify:
-    - restart realize
+  shell: "sudo {{venv_dir}}/bin/python {{realize_dir}}/manage.py syncjs -p {{realize_frontend_dir}} --settings={{realize_settings}} chdir={{realize_dir}}"
+
+# Start services back up
+- name: start celery
+  service: name=celery state=started
+
+- name: start realize
+  service: name=realize state=started
 
 - name:  create nginx directory and set perms
   file: path=/etc/nginx/sites-available owner=root group=ar mode=2775 state=directory
